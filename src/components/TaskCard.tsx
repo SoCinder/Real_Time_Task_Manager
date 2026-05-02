@@ -3,17 +3,16 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-export function TaskCard({
-  task,
-  onClick,
-}: any) {
+export function TaskCard({ task, onClick }: any) {
   const {
+    setNodeRef,
     attributes,
     listeners,
-    setNodeRef,
     transform,
     transition,
-  } = useSortable({ id: task.id });
+  } = useSortable({
+    id: task.id,
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -26,10 +25,13 @@ export function TaskCard({
       style={style}
       {...attributes}
       {...listeners}
-      onClick={() => onClick(task)}
-      className="bg-white p-3 mb-2 rounded shadow cursor-pointer"
+      onClick={() => {
+        console.log("CLICK:", task.id);
+        onClick?.(task);
+      }}
+      className="bg-white p-3 mb-2 rounded shadow cursor-grab active:cursor-grabbing"
     >
-      <h3 className="font-semibold">{task.title}</h3>
+      {task.title}
     </div>
   );
 }
