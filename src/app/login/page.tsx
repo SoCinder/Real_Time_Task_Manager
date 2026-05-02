@@ -2,6 +2,7 @@
 
 import { signIn } from "next-auth/react";
 import { useState } from "react";
+import Link from "next/link";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -31,6 +32,13 @@ export default function LoginPage() {
       <button onClick={handleLogin} className="bg-black text-white p-2">
         Login
       </button>
+      <p style={{ marginTop: "10px" }}>
+        Don’t have an account?{" "}
+        <Link href="/register" style={{ color: "blue" }}>
+          Register here
+        </Link>
+      </p>
     </div>
+    
   );
 }
