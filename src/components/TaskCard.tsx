@@ -16,7 +16,7 @@ export function TaskCard({ task, onClick }: any) {
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: transition || "transform 200ms ease",
   };
 
   return (
@@ -24,14 +24,24 @@ export function TaskCard({ task, onClick }: any) {
       ref={setNodeRef}
       style={style}
       {...attributes}
-      {...listeners}
-      onClick={() => {
-        console.log("CLICK:", task.id);
-        onClick?.(task);
-      }}
-      className="bg-white p-3 mb-2 rounded shadow cursor-grab active:cursor-grabbing"
+      className="bg-white p-3 mb-2 rounded shadow"
     >
-      {task.title}
+      
+      <div
+        {...listeners}
+        className="h-2 bg-gray-300 rounded mb-2 cursor-grab active:cursor-grabbing"
+      />
+
+      
+      <div
+        onClick={() => {
+          console.log("CLICK:", task.id);
+          onClick?.(task);
+        }}
+        className="cursor-pointer"
+      >
+        {task.title}
+      </div>
     </div>
   );
 }

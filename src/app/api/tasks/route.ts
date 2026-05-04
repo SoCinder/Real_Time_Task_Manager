@@ -22,7 +22,10 @@ export async function GET() {
 
     const tasks = await prisma.task.findMany({
       where: { userId: user.id },
-      orderBy: { position: "asc" },
+      orderBy: [
+        { status: "asc" },     // 🔥 important fix
+        { position: "asc" },
+      ],
     });
 
     return NextResponse.json(tasks);
@@ -50,31 +53,29 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    
-    const lastTask = await prisma.task.findFirst({
+    // 🔥 safer position logic
+    const count = await prisma.task.count({
       where: {
         userId: user.id,
         status: body.status,
       },
-      orderBy: {
-        position: "desc",
-      },
     });
-
-    const position = lastTask ? lastTask.position + 1 : 0;
 
     const task = await prisma.task.create({
       data: {
         title: body.title,
         description: body.description ?? "",
         status: body.status,
-        position,
+        position: count,
         userId: user.id,
       },
     });
 
     try {
-      publish("created", task);
+      publish("created", {
+        ...task,
+        _source: "server",
+      });
     } catch {}
 
     return NextResponse.json(task);
