@@ -1,80 +1,97 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-type Task = {
-  id: string;
-  title: string;
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  position: number;
-};
+import { useState, useEffect } from "react";
 
 export function TaskSidebar({
   task,
+  createMode,
   onClose,
+  onCreated,
   onUpdated,
-}: {
-  task: Task | null;
-  onClose: () => void;
-  onUpdated: (task: Task) => void;
-}) {
+}: any) {
   const [title, setTitle] = useState("");
-  const [status, setStatus] = useState<Task["status"]>("TODO");
+  const [status, setStatus] = useState("TODO");
 
   useEffect(() => {
     if (task) {
-      setTitle(task.title);
-      setStatus(task.status);
+      setTitle(task.title || "");
+      setStatus(task.status || "TODO");
+    } else {
+      setTitle("");
+      setStatus("TODO");
     }
   }, [task]);
 
-  if (!task) return null;
+  const handleSubmit = async () => {
+    try {
+      if (createMode) {
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            status,
+          }),
+        });
 
-  const save = async () => {
-    const res = await fetch(`/api/tasks/${task.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, status }),
-    });
+        const newTask = await res.json();
+        onCreated?.(newTask);
+      } else {
+        const res = await fetch(`/api/tasks/${task.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            status,
+          }),
+        });
 
-    if (!res.ok) return;
+        const updated = await res.json();
+        onUpdated?.(updated);
+      }
 
-    onUpdated({ ...task, title, status });
+      onClose();
+    } catch (e) {
+      console.error("Submit error", e);
+    }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex justify-end z-50">
-      <div className="w-[400px] bg-white p-5 h-full shadow-xl">
-        <div className="flex justify-between mb-4">
-          <h2 className="font-bold">Edit Task</h2>
-          <button onClick={onClose}>✕</button>
-        </div>
+    <div className="absolute right-0 top-0 h-full w-80 bg-white shadow-lg p-4">
+      <h2 className="text-lg font-bold mb-4">
+        {createMode ? "Create Task" : "Edit Task"}
+      </h2>
 
-        <input
-          className="w-full border p-2 mb-3"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
+      <input
+        className="w-full border p-2 mb-3"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Task title"
+      />
 
-        <select
-          className="w-full border p-2 mb-3"
-          value={status}
-          onChange={(e) =>
-            setStatus(e.target.value as Task["status"])
-          }
-        >
-          <option value="TODO">TODO</option>
-          <option value="IN_PROGRESS">IN_PROGRESS</option>
-          <option value="DONE">DONE</option>
-        </select>
+      <select
+        className="w-full border p-2 mb-3"
+        value={status}
+        onChange={(e) => setStatus(e.target.value)}
+      >
+        <option value="TODO">TODO</option>
+        <option value="IN_PROGRESS">IN_PROGRESS</option>
+        <option value="DONE">DONE</option>
+      </select>
 
-        <button
-          onClick={save}
-          className="w-full bg-black text-white p-2 rounded"
-        >
-          Save
-        </button>
-      </div>
+      <button
+        onClick={handleSubmit}
+        className="bg-black text-white px-3 py-1 rounded w-full"
+      >
+        {createMode ? "Create" : "Update"}
+      </button>
+
+      <button
+        onClick={onClose}
+        className="mt-2 text-gray-500 w-full"
+      >
+        Cancel
+      </button>
     </div>
   );
 }

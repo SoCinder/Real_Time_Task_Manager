@@ -1,19 +1,8 @@
-type Subscriber = (data: string) => void;
+import Ably from "ably";
 
-const subscribers = new Set<Subscriber>();
-
-export function subscribe(fn: Subscriber) {
-  subscribers.add(fn);
-  return () => subscribers.delete(fn);
-}
+const ably = new Ably.Rest(process.env.ABLY_API_KEY!);
+const channel = ably.channels.get("tasks");
 
 export function publish(event: string, payload: any) {
-  const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const s of subscribers) {
-    try {
-      s(msg);
-    } catch (e) {
-      // ignore
-    }
-  }
+  channel.publish(event, payload);
 }

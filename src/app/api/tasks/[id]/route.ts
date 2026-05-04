@@ -31,36 +31,53 @@ export async function PATCH(
 
     const body = await req.json();
 
-    const updated = await prisma.task.updateMany({
-      where: {
-        id,
-        userId: user.id,
-      },
+    // 🔥 ensure ownership
+    const existing = await prisma.task.findUnique({
+      where: { id },
+    });
+
+    if (!existing || existing.userId !== user.id) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
+
+    let newPosition = body.position;
+
+    // 🔥 if moving across columns → compute correct position
+    if (body.status && body.status !== existing.status) {
+      const count = await prisma.task.count({
+        where: {
+          userId: user.id,
+          status: body.status,
+        },
+      });
+
+      newPosition = count;
+    }
+
+    // 🔥 update task (single row, not updateMany)
+    const task = await prisma.task.update({
+      where: { id },
       data: {
         ...(body.title !== undefined && { title: body.title }),
         ...(body.description !== undefined && {
           description: body.description,
         }),
         ...(body.status !== undefined && { status: body.status }),
-        ...(body.position !== undefined && {
-          position: body.position,
+        ...(newPosition !== undefined && {
+          position: newPosition,
         }),
       },
     });
 
-    if (updated.count === 0) {
-      return new NextResponse("Forbidden", { status: 403 });
-    }
+    // 🔥 realtime publish (safe)
+    try {
+      console.log("🔥 PUBLISH CALLED", task.id);
 
-    const task = await prisma.task.findUnique({
-      where: { id },
-    });
-
-    if (task) {
-      try {
-        publish("updated", task);
-      } catch {}
-    }
+      publish("updated", {
+        ...task,
+        _source: "server",
+      });
+    } catch {}
 
     return NextResponse.json(task);
   } catch (error) {
@@ -91,16 +108,17 @@ export async function DELETE(req: Request, context: any) {
       return new NextResponse("Missing ID", { status: 400 });
     }
 
-    const result = await prisma.task.deleteMany({
-      where: {
-        id,
-        userId: user.id,
-      },
+    const existing = await prisma.task.findUnique({
+      where: { id },
     });
 
-    if (result.count === 0) {
+    if (!existing || existing.userId !== user.id) {
       return new NextResponse("Forbidden", { status: 403 });
     }
+
+    await prisma.task.delete({
+      where: { id },
+    });
 
     try {
       publish("deleted", { id });
