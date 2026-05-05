@@ -4,15 +4,13 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { publish } from "@/lib/realtime";
 
-export async function PATCH(
-  req: Request,
-  context: any
-) {
+// ---------------- PATCH ----------------
+export async function PATCH(req: Request, context: any) {
   try {
     const session = await getServerSession(authOptions);
 
     if (!session?.user?.email) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const user = await prisma.user.findUnique({
@@ -20,78 +18,46 @@ export async function PATCH(
     });
 
     if (!user) {
-      return new NextResponse("User not found", { status: 404 });
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // ✅ FIX: params is a Promise in Next.js 15+
     const { id } = await context.params;
-
-    if (!id) {
-      return new NextResponse("Missing ID", { status: 400 });
-    }
 
     const body = await req.json();
 
-    // 🔥 ensure ownership
-    const existing = await prisma.task.findUnique({
-      where: { id },
+    const existing = await prisma.task.findFirst({
+      where: { id, userId: user.id, deletedAt: null },
     });
 
-    if (!existing || existing.userId !== user.id) {
-      return new NextResponse("Forbidden", { status: 403 });
+    if (!existing) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    let newPosition = body.position;
-
-    // 🔥 if moving across columns → compute correct position
-    if (body.status && body.status !== existing.status) {
-      const count = await prisma.task.count({
-        where: {
-          userId: user.id,
-          status: body.status,
-        },
-      });
-
-      newPosition = count;
-    }
-
-    // 🔥 update task (single row, not updateMany)
     const task = await prisma.task.update({
       where: { id },
       data: {
         ...(body.title !== undefined && { title: body.title }),
-        ...(body.description !== undefined && {
-          description: body.description,
-        }),
         ...(body.status !== undefined && { status: body.status }),
-        ...(newPosition !== undefined && {
-          position: newPosition,
-        }),
       },
     });
 
-    // 🔥 realtime publish (safe)
-    try {
-      console.log("🔥 PUBLISH CALLED", task.id);
-
-      publish("updated", {
-        ...task,
-        _source: "server",
-      });
-    } catch {}
+    publish("updated", task);
 
     return NextResponse.json(task);
-  } catch (error) {
-    console.error("PATCH ERROR:", error);
-    return new NextResponse("Server Error", { status: 500 });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
 
+// ---------------- DELETE (SOFT DELETE) ----------------
 export async function DELETE(req: Request, context: any) {
   try {
     const session = await getServerSession(authOptions);
 
     if (!session?.user?.email) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const user = await prisma.user.findUnique({
@@ -99,34 +65,32 @@ export async function DELETE(req: Request, context: any) {
     });
 
     if (!user) {
-      return new NextResponse("User not found", { status: 404 });
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // ✅ FIX HERE ALSO
     const { id } = await context.params;
 
-    if (!id) {
-      return new NextResponse("Missing ID", { status: 400 });
-    }
-
-    const existing = await prisma.task.findUnique({
+    await prisma.task.update({
       where: { id },
+      data: {
+        deletedAt: new Date(),
+      },
     });
 
-    if (!existing || existing.userId !== user.id) {
-      return new NextResponse("Forbidden", { status: 403 });
-    }
-
-    await prisma.task.delete({
-      where: { id },
+    const tasks = await prisma.task.findMany({
+      where: {
+        userId: user.id,
+        deletedAt: null,
+      },
+      orderBy: [{ status: "asc" }, { position: "asc" }],
     });
 
-    try {
-      publish("deleted", { id });
-    } catch {}
+    publish("bulk_update", tasks);
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("DELETE ERROR:", error);
-    return new NextResponse("Server Error", { status: 500 });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

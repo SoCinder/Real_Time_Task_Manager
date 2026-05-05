@@ -10,13 +10,18 @@ export function TaskCard({ task, onClick }: any) {
     listeners,
     transform,
     transition,
+    isDragging,
   } = useSortable({
     id: task.id,
   });
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition: transition || "transform 200ms ease",
+    transition: isDragging
+      ? "none"
+      : transition || "transform 200ms ease",
+    zIndex: isDragging ? 50 : "auto",
+    opacity: isDragging ? 0.6 : 1,
   };
 
   return (
@@ -24,20 +29,23 @@ export function TaskCard({ task, onClick }: any) {
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className="bg-white p-3 mb-2 rounded shadow"
+      className={`
+        bg-[var(--card)] border border-[var(--border)]
+        p-3 mb-2 rounded-lg shadow-sm
+        hover:shadow-md transition
+        animate-in
+        ${task._deleting ? "animate-out" : ""}
+      `}
     >
-      
+      {/* drag handle */}
       <div
         {...listeners}
-        className="h-2 bg-gray-300 rounded mb-2 cursor-grab active:cursor-grabbing"
+        className="h-2 bg-[var(--border)] rounded mb-2 cursor-grab active:cursor-grabbing"
       />
 
-      
+      {/* content */}
       <div
-        onClick={() => {
-          console.log("CLICK:", task.id);
-          onClick?.(task);
-        }}
+        onClick={() => onClick?.(task)}
         className="cursor-pointer"
       >
         {task.title}

@@ -2,8 +2,16 @@ import { prisma } from "@/lib/db/prisma";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { publish } from "@/lib/realtime";
 
+import type { Task } from "@/types/task";
+
+const statusOrder: Record<Task["status"], number> = {
+  TODO: 0,
+  IN_PROGRESS: 1,
+  DONE: 2,
+};
+
+// ---------------- GET ----------------
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -16,14 +24,15 @@ export async function GET() {
       where: { email: session.user.email },
     });
 
-    if (!user) {
-      return NextResponse.json([]);
-    }
+    if (!user) return NextResponse.json([]);
 
     const tasks = await prisma.task.findMany({
-      where: { userId: user.id },
+      where: {
+        userId: user.id,
+        deletedAt: null,
+      },
       orderBy: [
-        { status: "asc" },     // 🔥 important fix
+        { status: "asc" },
         { position: "asc" },
       ],
     });
@@ -35,6 +44,7 @@ export async function GET() {
   }
 }
 
+// ---------------- POST ----------------
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -53,11 +63,11 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    // 🔥 safer position logic
     const count = await prisma.task.count({
       where: {
         userId: user.id,
         status: body.status,
+        deletedAt: null,
       },
     });
 
@@ -68,15 +78,9 @@ export async function POST(req: Request) {
         status: body.status,
         position: count,
         userId: user.id,
+        deletedAt: null,
       },
     });
-
-    try {
-      publish("created", {
-        ...task,
-        _source: "server",
-      });
-    } catch {}
 
     return NextResponse.json(task);
   } catch (err) {
