@@ -34,6 +34,8 @@ State Architecture
 # Project Structure
 
 The project follows a modular Next.js full-stack architecture with clear separation between frontend UI, API routes, database layer, and realtime/event system.
+
+```text
 web/
 ├── src/
 │ ├── app/
