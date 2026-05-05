@@ -87,6 +87,7 @@ web/
 ├── next.config.js
 ├── package.json
 └── tsconfig.json
+```
 
 ---
 
