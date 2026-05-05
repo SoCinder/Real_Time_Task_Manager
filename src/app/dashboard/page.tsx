@@ -18,43 +18,22 @@ import {
 
 import { TaskCard } from "@/components/TaskCard";
 import { TaskSidebar } from "@/components/TaskSidebar";
-
 import * as Ably from "ably";
 
-type Task = {
-  id: string;
-  title: string;
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  position: number;
-  _source?: "client" | "server";
-};
+import type { Task } from "@/types/task";
 
 const columns = ["TODO", "IN_PROGRESS", "DONE"] as const;
-
-function mergeTask(prev: Task[], incoming: Task) {
-  const others = prev.filter((t) => t.id !== incoming.id);
-  const updated = [...others, incoming];
-
-  const grouped: Record<string, Task[]> = {};
-
-  for (const t of updated) {
-    if (!grouped[t.status]) grouped[t.status] = [];
-    grouped[t.status].push(t);
-  }
-
-  return Object.values(grouped).flatMap((group) =>
-    group
-      .sort((a, b) => a.position - b.position)
-      .map((t, i) => ({ ...t, position: i }))
-  );
-}
 
 export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createMode, setCreateMode] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
 
+  const [pendingDelete, setPendingDelete] = useState<Task | null>(null);
+  const deleteTimerRef = useRef<any>(null);
+
+  const pendingDeleteRef = useRef<Task | null>(null);
+  const hydratedRef = useRef(false);
   const ablyRef = useRef<Ably.Realtime | null>(null);
 
   const sensors = useSensors(
@@ -63,31 +42,22 @@ export default function DashboardPage() {
     })
   );
 
-  // ✅ INITIAL FETCH (FIXED)
+  // ---------------- FETCH ----------------
   useEffect(() => {
-    console.log("📦 fetching tasks...");
-
     fetch("/api/tasks")
-      .then(async (res) => {
-        console.log("STATUS:", res.status);
-
-        if (!res.ok) {
-          const text = await res.text();
-          console.error("API ERROR:", text);
-          return [];
-        }
-
-        return res.json();
-      })
+      .then((res) => res.json())
       .then((data) => {
-        console.log("✅ tasks loaded:", data);
         setTasks(data);
-        setHydrated(true); // 🔥 important
-      })
-      .catch((err) => console.error("❌ fetch error", err));
+        hydratedRef.current = true;
+      });
   }, []);
 
-  // ✅ REALTIME (FIXED + STABLE)
+  // keep ref in sync
+  useEffect(() => {
+    pendingDeleteRef.current = pendingDelete;
+  }, [pendingDelete]);
+
+  // ---------------- ABLY ----------------
   useEffect(() => {
     if (ablyRef.current) return;
 
@@ -99,51 +69,24 @@ export default function DashboardPage() {
 
     const channel = client.channels.get("tasks");
 
-    channel.subscribe("created", (msg) => {
-      if (!hydrated) return;
+    channel.subscribe("bulk_update", (msg) => {
+      if (!hydratedRef.current) return;
 
-      const task = msg.data;
+      const pendingId = pendingDeleteRef.current?.id;
 
       setTasks((prev) => {
-        const exists = prev.some((t) => t.id === task.id);
-        if (exists) return prev;
-        return [...prev, task];
+        return msg.data.filter((t: Task) => t.id !== pendingId);
       });
     });
 
-    channel.subscribe("updated", (msg) => {
-      if (!hydrated) return;
-
-      const task = msg.data;
-
-      if (task._source === "client") return;
-
-      setTasks((prev) => mergeTask(prev, task));
-    });
-
-    channel.subscribe("deleted", (msg) => {
-      if (!hydrated) return;
-
-      const { id } = msg.data;
-
-      setTasks((prev) =>
-        prev.filter((t) => t.id !== id)
-      );
-    });
-
     return () => {
-      try {
-        channel.unsubscribe("created");
-        channel.unsubscribe("updated");
-        channel.unsubscribe("deleted");
-
-        // ❌ DO NOT close connection (prevents errors)
-        ablyRef.current = null;
-      } catch {}
+      channel.unsubscribe();
+      client.close();
+      ablyRef.current = null;
     };
-  }, [hydrated]);
+  }, []);
 
-  // ✅ GROUPING
+  // ---------------- GROUP ----------------
   const grouped = useMemo(() => {
     const g = {
       TODO: [] as Task[],
@@ -162,7 +105,7 @@ export default function DashboardPage() {
     return g;
   }, [tasks]);
 
-  // ✅ DRAG
+  // ---------------- DRAG ----------------
   const onDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over) return;
@@ -185,54 +128,54 @@ export default function DashboardPage() {
       newStatus = overTask.status;
     }
 
-    const newTasks = [...tasks];
-
-    const filtered = newTasks.filter(
-      (t) => t.status === newStatus && t.id !== activeId
-    );
-
-    let newIndex = filtered.length;
-
-    if (overTask) {
-      newIndex = filtered.findIndex(
-        (t) => t.id === overTask.id
-      );
-    }
-
-    const updatedTask: Task = {
-      ...activeTask,
-      status: newStatus,
-      position: newIndex,
-      _source: "client",
+    const map: Record<Task["status"], Task[]> = {
+      TODO: [],
+      IN_PROGRESS: [],
+      DONE: [],
     };
 
-    filtered.splice(newIndex, 0, updatedTask);
-
-    const final = newTasks
-      .filter(
-        (t) => t.id !== activeId && t.status !== newStatus
-      )
-      .concat(
-        filtered.map((t, index) => ({
-          ...t,
-          position: index,
-        }))
-      );
-
-    setTasks(final);
-
-    try {
-      await fetch(`/api/tasks/${activeId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: newStatus,
-          position: newIndex,
-        }),
-      });
-    } catch {
-      console.error("Failed to persist reorder");
+    for (const t of tasks) {
+      if (t.id !== activeId) {
+        map[t.status].push(t);
+      }
     }
+
+    const target = map[newStatus];
+
+    let index = target.length;
+
+    if (overTask) {
+      index = target.findIndex((t) => t.id === overTask.id);
+    }
+
+    target.splice(index, 0, {
+      ...activeTask,
+      status: newStatus,
+      position: index,
+    });
+
+    for (const col of columns) {
+      map[col] = map[col].map((t, i) => ({
+        ...t,
+        position: i,
+      }));
+    }
+
+    const rebuilt = [
+      ...map.TODO,
+      ...map.IN_PROGRESS,
+      ...map.DONE,
+    ];
+
+    setTasks(rebuilt);
+
+    await fetch("/api/tasks/reorder", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ tasks: rebuilt }),
+    });
   };
 
   const onTaskClick = (task: Task) => {
@@ -240,13 +183,33 @@ export default function DashboardPage() {
     setCreateMode(false);
   };
 
+  // ---------------- UNDO ----------------
+  // In undoDelete:
+  const undoDelete = async () => {
+    if (!pendingDelete) return;
+
+    clearTimeout(deleteTimerRef.current);
+
+    // 2. Restore the task to local state
+    setTasks((prev) => [...prev, pendingDelete]);
+
+    await fetch(`/api/tasks/${pendingDelete.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deletedAt: null }),
+    });
+
+    setPendingDelete(null);
+  };
+
+  // ---------------- COLUMN ----------------
   function Column({ col }: { col: Task["status"] }) {
     const { setNodeRef } = useDroppable({ id: col });
 
     return (
       <div
         ref={setNodeRef}
-        className="bg-gray-100 p-4 rounded min-h-[400px]"
+        className="bg-[var(--card)] border border-[var(--border)] p-4 rounded-xl shadow-sm min-h-[400px]"
       >
         <h2 className="font-bold mb-3">{col}</h2>
 
@@ -269,17 +232,15 @@ export default function DashboardPage() {
   return (
     <div className="p-6">
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-xl font-bold">
-          My Kanban Board
-        </h1>
+      <div className="flex justify-between mb-6">
+        <h1 className="text-xl font-bold">My Kanban Board</h1>
 
         <button
           onClick={() => {
             setSelectedTask(null);
             setCreateMode(true);
           }}
-          className="bg-black text-white px-3 py-1 rounded"
+          className="bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg"
         >
           + Add Task
         </button>
@@ -287,25 +248,50 @@ export default function DashboardPage() {
 
       {/* SIDEBAR */}
       {(selectedTask || createMode) && (
-        <div className="fixed inset-0 z-50">
-          <TaskSidebar
-            task={selectedTask}
-            createMode={createMode}
-            onClose={() => {
-              setSelectedTask(null);
-              setCreateMode(false);
-            }}
-            onCreated={(task: Task) => {
-              setTasks((prev) => [...prev, task]);
-            }}
-            onUpdated={(updated: Task) => {
-              setTasks((prev) =>
-                prev.map((t) =>
-                  t.id === updated.id ? updated : t
-                )
-              );
-            }}
-          />
+        <TaskSidebar
+          task={selectedTask}
+          createMode={createMode}
+          onClose={() => {
+            setSelectedTask(null);
+            setCreateMode(false);
+          }}
+          onCreated={(task: Task) =>
+            setTasks((prev) => [...prev, task])
+          }
+          onUpdated={(updated: Task) =>
+            setTasks((prev) =>
+              prev.map((t) =>
+                t.id === updated.id ? updated : t
+              )
+            )
+          }
+          // In onDeleted callback:
+          onDeleted={(task: Task) => {
+            if (!task?.id) return;
+
+            // 1. Remove from local state immediately
+            setTasks((prev) => prev.filter((t) => t.id !== task.id));
+            setSelectedTask(null);
+            setCreateMode(false);
+
+            setPendingDelete(task);
+            clearTimeout(deleteTimerRef.current);
+
+            deleteTimerRef.current = setTimeout(async () => {
+              await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
+              setPendingDelete(null);
+            }, 5000);
+          }}
+        />
+      )}
+
+      {/* UNDO BAR */}
+      {pendingDelete && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-2 rounded-lg shadow-lg flex gap-3 items-center">
+          Task deleted
+          <button onClick={undoDelete} className="underline">
+            Undo
+          </button>
         </div>
       )}
 

@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type Task = {
-  id: string;
-  title: string;
-  description?: string | null;
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  position: number;
-};
+import type { Task } from "@/types/task";
 
 export function TaskModal({
   task,

@@ -8,6 +8,7 @@ export function TaskSidebar({
   onClose,
   onCreated,
   onUpdated,
+  onDeleted,
 }: any) {
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState("TODO");
@@ -22,16 +23,14 @@ export function TaskSidebar({
     }
   }, [task]);
 
+  // ---------------- CREATE / UPDATE ----------------
   const handleSubmit = async () => {
     try {
       if (createMode) {
         const res = await fetch("/api/tasks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title,
-            status,
-          }),
+          body: JSON.stringify({ title, status }),
         });
 
         const newTask = await res.json();
@@ -40,10 +39,7 @@ export function TaskSidebar({
         const res = await fetch(`/api/tasks/${task.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title,
-            status,
-          }),
+          body: JSON.stringify({ title, status }),
         });
 
         const updated = await res.json();
@@ -56,8 +52,18 @@ export function TaskSidebar({
     }
   };
 
+  // ---------------- DELETE (FIXED) ----------------
+  const handleDelete = () => {
+    if (!task) return;
+
+    // ONLY notify parent (NO API CALL HERE)
+    onDeleted?.(task);
+
+    onClose();
+  };
+
   return (
-    <div className="absolute right-0 top-0 h-full w-80 bg-white shadow-lg p-4">
+    <div className="absolute right-0 top-0 h-full w-80 bg-[var(--card)] border-l border-[var(--border)] shadow-xl p-4">
       <h2 className="text-lg font-bold mb-4">
         {createMode ? "Create Task" : "Edit Task"}
       </h2>
@@ -81,10 +87,19 @@ export function TaskSidebar({
 
       <button
         onClick={handleSubmit}
-        className="bg-black text-white px-3 py-1 rounded w-full"
+        className="bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg font-medium w-full"
       >
         {createMode ? "Create" : "Update"}
       </button>
+
+      {!createMode && (
+        <button
+          onClick={handleDelete}
+          className="mt-2 bg-red-500 text-white px-3 py-1 rounded w-full"
+        >
+          Delete
+        </button>
+      )}
 
       <button
         onClick={onClose}
