@@ -1,7 +1,7 @@
 Project Structure
 
 The project follows a modular Next.js full-stack architecture with clear separation between frontend UI, API routes, database layer, and realtime/event system.
-
+...
 web/
 ├── src/
 │   ├── app/
@@ -53,6 +53,8 @@ web/
 ├── next.config.js
 ├── package.json
 └── tsconfig.json
+...
+
 Architecture Overview
 
 The system is designed with a server-authoritative, event-driven architecture similar to Linear.
