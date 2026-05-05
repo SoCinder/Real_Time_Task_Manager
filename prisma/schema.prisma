@@ -35,3 +35,22 @@ enum TaskStatus {
   IN_PROGRESS
   DONE
 }
+
+model Action {
+  id        String   @id @default(uuid())
+  type      ActionType
+  taskId    String
+  userId    String
+
+  before    Json?    
+  after     Json?    
+
+  expiresAt DateTime
+  canceled  Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+enum ActionType {
+  DELETE
+}
