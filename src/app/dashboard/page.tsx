@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -28,13 +28,7 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createMode, setCreateMode] = useState(false);
-
-  const [pendingDelete, setPendingDelete] = useState<Task | null>(null);
-  const deleteTimerRef = useRef<any>(null);
-
-  const pendingDeleteRef = useRef<Task | null>(null);
-  const hydratedRef = useRef(false);
-  const ablyRef = useRef<Ably.Realtime | null>(null);
+  const [showUndo, setShowUndo] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -43,58 +37,44 @@ export default function DashboardPage() {
   );
 
   // ---------------- FETCH ----------------
-  useEffect(() => {
-    fetch("/api/tasks")
-      .then((res) => res.json())
-      .then((data) => {
-        setTasks(data);
-        hydratedRef.current = true;
-      });
-  }, []);
+  const fetchTasks = async () => {
+    const res = await fetch("/api/tasks");
+    const data = await res.json();
+    setTasks(data);
+  };
 
-  // keep ref in sync
   useEffect(() => {
-    pendingDeleteRef.current = pendingDelete;
-  }, [pendingDelete]);
+    fetchTasks();
+  }, []);
 
   // ---------------- ABLY ----------------
   useEffect(() => {
-    if (ablyRef.current) return;
-
     const client = new Ably.Realtime(
       process.env.NEXT_PUBLIC_ABLY_KEY!
     );
 
-    ablyRef.current = client;
-
     const channel = client.channels.get("tasks");
 
     channel.subscribe("bulk_update", (msg) => {
-      if (!hydratedRef.current) return;
-
-      const pendingId = pendingDeleteRef.current?.id;
-
-      setTasks((prev) => {
-        return msg.data.filter((t: Task) => t.id !== pendingId);
-      });
+      setTasks(msg.data);
     });
 
     return () => {
       channel.unsubscribe();
       client.close();
-      ablyRef.current = null;
     };
   }, []);
 
   // ---------------- GROUP ----------------
   const grouped = useMemo(() => {
-    const g = {
-      TODO: [] as Task[],
-      IN_PROGRESS: [] as Task[],
-      DONE: [] as Task[],
+    const g: Record<Task["status"], Task[]> = {
+      TODO: [],
+      IN_PROGRESS: [],
+      DONE: [],
     };
 
     for (const t of tasks) {
+      if (!t || t.deletedAt) continue;
       g[t.status].push(t);
     }
 
@@ -105,7 +85,7 @@ export default function DashboardPage() {
     return g;
   }, [tasks]);
 
-  // ---------------- DRAG ----------------
+  // ---------------- DRAG (LINEAR STYLE FIXED) ----------------
   const onDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over) return;
@@ -115,91 +95,40 @@ export default function DashboardPage() {
 
     if (activeId === overId) return;
 
-    const activeTask = tasks.find((t) => t.id === activeId);
-    const overTask = tasks.find((t) => t.id === overId);
+    // ❗ NO local ordering logic anymore
+    // We only send intent to server
 
-    if (!activeTask) return;
-
-    let newStatus = activeTask.status;
-
-    if (columns.includes(overId as any)) {
-      newStatus = overId as Task["status"];
-    } else if (overTask) {
-      newStatus = overTask.status;
+    try {
+      await fetch("/api/tasks/move", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          taskId: activeId,
+          overId,
+        }),
+      });
+    } catch (err) {
+      console.error("Move failed:", err);
+      fetchTasks(); // fallback safety
     }
-
-    const map: Record<Task["status"], Task[]> = {
-      TODO: [],
-      IN_PROGRESS: [],
-      DONE: [],
-    };
-
-    for (const t of tasks) {
-      if (t.id !== activeId) {
-        map[t.status].push(t);
-      }
-    }
-
-    const target = map[newStatus];
-
-    let index = target.length;
-
-    if (overTask) {
-      index = target.findIndex((t) => t.id === overTask.id);
-    }
-
-    target.splice(index, 0, {
-      ...activeTask,
-      status: newStatus,
-      position: index,
-    });
-
-    for (const col of columns) {
-      map[col] = map[col].map((t, i) => ({
-        ...t,
-        position: i,
-      }));
-    }
-
-    const rebuilt = [
-      ...map.TODO,
-      ...map.IN_PROGRESS,
-      ...map.DONE,
-    ];
-
-    setTasks(rebuilt);
-
-    await fetch("/api/tasks/reorder", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ tasks: rebuilt }),
-    });
   };
 
+  // ---------------- TASK CLICK ----------------
   const onTaskClick = (task: Task) => {
     setSelectedTask(task);
     setCreateMode(false);
   };
 
   // ---------------- UNDO ----------------
-  // In undoDelete:
-  const undoDelete = async () => {
-    if (!pendingDelete) return;
-
-    clearTimeout(deleteTimerRef.current);
-
-    // 2. Restore the task to local state
-    setTasks((prev) => [...prev, pendingDelete]);
-
-    await fetch(`/api/tasks/${pendingDelete.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deletedAt: null }),
+  const handleUndo = async () => {
+    await fetch("/api/actions/undo", {
+      method: "POST",
     });
 
-    setPendingDelete(null);
+    setShowUndo(false);
+    fetchTasks();
   };
 
   // ---------------- COLUMN ----------------
@@ -255,41 +184,23 @@ export default function DashboardPage() {
             setSelectedTask(null);
             setCreateMode(false);
           }}
-          onCreated={(task: Task) =>
-            setTasks((prev) => [...prev, task])
-          }
-          onUpdated={(updated: Task) =>
-            setTasks((prev) =>
-              prev.map((t) =>
-                t.id === updated.id ? updated : t
-              )
-            )
-          }
-          // In onDeleted callback:
-          onDeleted={(task: Task) => {
-            if (!task?.id) return;
+          onCreated={fetchTasks}
+          onUpdated={fetchTasks}
+          onDeleted={async (task: Task) => {
+            await fetch(`/api/tasks/${task.id}`, {
+              method: "DELETE",
+            });
 
-            // 1. Remove from local state immediately
-            setTasks((prev) => prev.filter((t) => t.id !== task.id));
-            setSelectedTask(null);
-            setCreateMode(false);
-
-            setPendingDelete(task);
-            clearTimeout(deleteTimerRef.current);
-
-            deleteTimerRef.current = setTimeout(async () => {
-              await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
-              setPendingDelete(null);
-            }, 5000);
+            setShowUndo(true);
           }}
         />
       )}
 
       {/* UNDO BAR */}
-      {pendingDelete && (
+      {showUndo && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-2 rounded-lg shadow-lg flex gap-3 items-center">
           Task deleted
-          <button onClick={undoDelete} className="underline">
+          <button onClick={handleUndo} className="underline">
             Undo
           </button>
         </div>

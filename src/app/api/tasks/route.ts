@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     const count = await prisma.task.count({
       where: {
         userId: user.id,
-        status: body.status,
+        status: body.status ?? "TODO",
         deletedAt: null,
       },
     });
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
       data: {
         title: body.title,
         description: body.description ?? "",
-        status: body.status,
+        status: body.status ?? "TODO",
         position: count,
         userId: user.id,
         deletedAt: null,

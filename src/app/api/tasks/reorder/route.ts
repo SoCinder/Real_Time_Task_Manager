@@ -3,6 +3,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { publish } from "@/lib/realtime";
+import type { Task } from "@/types/task";
+
+type ReorderInput = {
+  id: string;
+  status: Task["status"];
+  position: number;
+};
 
 export async function POST(req: Request) {
   try {
@@ -20,13 +27,34 @@ export async function POST(req: Request) {
       return new NextResponse("User not found", { status: 404 });
     }
 
-    const { tasks } = await req.json();
+    const body = await req.json();
 
-    // 🔥 overwrite ALL tasks safely
+    const tasks: ReorderInput[] = body.tasks;
+
+    if (!Array.isArray(tasks)) {
+      return new NextResponse("Invalid payload", { status: 400 });
+    }
+
+    // ---------------- SECURITY FILTER ----------------
+    const userTasks: { id: string }[] = await prisma.task.findMany({
+      where: {
+        userId: user.id,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    const validIds = new Set(userTasks.map((t) => t.id));
+
+    const safeTasks = tasks.filter((t) => validIds.has(t.id));
+
+    // ---------------- TRANSACTION ----------------
     await prisma.$transaction(
-      tasks.map((t: any) =>
+      safeTasks.map((t) =>
         prisma.task.update({
-          where: { id: t.id },
+          where: {
+            id: t.id,
+          },
           data: {
             status: t.status,
             position: t.position,
@@ -35,8 +63,20 @@ export async function POST(req: Request) {
       )
     );
 
-    // 🔥 broadcast FULL snapshot
-    publish("bulk_update", tasks);
+    // ---------------- REFRESH STATE ----------------
+    const updatedTasks = await prisma.task.findMany({
+      where: {
+        userId: user.id,
+        deletedAt: null,
+      },
+      orderBy: [
+        { status: "asc" },
+        { position: "asc" },
+      ],
+    });
+
+    // ---------------- REALTIME SYNC ----------------
+    publish("bulk_update", updatedTasks);
 
     return NextResponse.json({ success: true });
   } catch (e) {

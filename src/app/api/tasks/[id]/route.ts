@@ -21,7 +21,6 @@ export async function PATCH(req: Request, context: any) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // ✅ FIX: params is a Promise in Next.js 15+
     const { id } = await context.params;
 
     const body = await req.json();
@@ -39,6 +38,9 @@ export async function PATCH(req: Request, context: any) {
       data: {
         ...(body.title !== undefined && { title: body.title }),
         ...(body.status !== undefined && { status: body.status }),
+        ...(body.description !== undefined && {
+          description: body.description,
+        }), // ✅ FIXED
       },
     });
 
@@ -51,7 +53,7 @@ export async function PATCH(req: Request, context: any) {
   }
 }
 
-// ---------------- DELETE (SOFT DELETE) ----------------
+// ---------------- DELETE (SOFT + UNDO SNAPSHOT) ----------------
 export async function DELETE(req: Request, context: any) {
   try {
     const session = await getServerSession(authOptions);
@@ -68,9 +70,39 @@ export async function DELETE(req: Request, context: any) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // ✅ FIX HERE ALSO
     const { id } = await context.params;
 
+    const existing = await prisma.task.findFirst({
+      where: {
+        id,
+        userId: user.id,
+        deletedAt: null,
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // =========================
+    // 1. CREATE ACTION SNAPSHOT (FULL STATE)
+    // =========================
+    await prisma.action.create({
+      data: {
+        type: "DELETE",
+        taskId: existing.id,
+        userId: user.id,
+
+        before: existing as any, // ✅ includes description automatically
+
+        expiresAt: new Date(Date.now() + 1000 * 60 * 5),
+        canceled: false,
+      },
+    });
+
+    // =========================
+    // 2. SOFT DELETE TASK
+    // =========================
     await prisma.task.update({
       where: { id },
       data: {
@@ -78,6 +110,9 @@ export async function DELETE(req: Request, context: any) {
       },
     });
 
+    // =========================
+    // 3. BROADCAST UPDATE
+    // =========================
     const tasks = await prisma.task.findMany({
       where: {
         userId: user.id,
