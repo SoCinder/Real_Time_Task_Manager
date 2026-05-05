@@ -38,52 +38,106 @@ The project follows a modular Next.js full-stack architecture with clear separat
 ```text
 web/
 ├── src/
-│ ├── app/
-│ │ ├── dashboard/
-│ │ │ └── page.tsx
-│ │ │
-│ │ ├── api/
-│ │ │ ├── tasks/
-│ │ │ │ ├── route.ts
-│ │ │ │ └── [id]/
-│ │ │ │ └── route.ts
-│ │ │ │
-│ │ │ ├── tasks/
-│ │ │ │ └── reorder/
-│ │ │ │ └── route.ts
-│ │ │ │
-│ │ │ ├── actions/
-│ │ │ │ └── undo/
-│ │ │ │ └── route.ts
-│ │ │ │
-│ │ │ └── health/
-│ │ │ └── route.ts
-│ │ │
-│ │ ├── layout.tsx
-│ │ └── globals.css
-│ │
-│ ├── components/
-│ │ ├── TaskCard.tsx
-│ │ ├── TaskSidebar.tsx
-│ │ └── ui/
-│ │
-│ ├── lib/
-│ │ ├── db/
-│ │ │ └── prisma.ts
-│ │ ├── auth.ts
-│ │ ├── realtime.ts
-│ │ └── utils.ts
-│ │
-│ ├── types/
-│ │ └── task.ts
-│ │
-│ └── middleware.ts
+│
+│   ├── app/
+│   │
+│   │   ├── dashboard/
+│   │   │   └── page.tsx
+│   │   │       # Main Kanban board UI
+│   │   │       # Drag & drop (dnd-kit)
+│   │   │       # Realtime sync (Ably)
+│   │   │       # Undo UI trigger
+│   │   │
+│   │   ├── api/
+│   │   │
+│   │   │   ├── tasks/
+│   │   │   │   ├── route.ts
+│   │   │   │   # GET: fetch tasks
+│   │   │   │   # POST: create task
+│   │   │   │
+│   │   │   │   ├── [id]/
+│   │   │   │   │   └── route.ts
+│   │   │   │   # PATCH: update task (title, status, description)
+│   │   │   │   # DELETE: soft delete + create action log
+│   │   │   │
+│   │   │   │   └── reorder/
+│   │   │   │       └── route.ts
+│   │   │   │       # Server-authoritative drag reorder
+│   │   │   │       # Bulk update positions + status
+│   │   │   │
+│   │   │   ├── actions/
+│   │   │   │   └── undo/
+│   │   │   │       └── route.ts
+│   │   │   │       # Undo last action (DELETE rollback)
+│   │   │   │       # Restores task from snapshot
+│   │   │   │
+│   │   │   └── health/
+│   │   │       └── route.ts
+│   │   │       # Optional system check endpoint
+│   │
+│   │   ├── layout.tsx
+│   │   └── globals.css
+│
+│   ├── components/
+│   │
+│   │   ├── TaskCard.tsx
+│   │   │   # Draggable task item
+│   │   │
+│   │   ├── TaskSidebar.tsx
+│   │   │   # Create / edit / delete task UI
+│   │   │   # Supports title, status, description
+│   │   │
+│   │   └── ui/
+│   │       # (Optional reusable UI components)
+│   │
+│   ├── lib/
+│   │
+│   │   ├── db/
+│   │   │   └── prisma.ts
+│   │   │   # Prisma client singleton
+│   │   │
+│   │   ├── auth.ts
+│   │   │   # NextAuth configuration
+│   │   │
+│   │   ├── realtime.ts
+│   │   │   # Ably publisher (publish("bulk_update"))
+│   │   │
+│   │   └── utils.ts
+│   │
+│   ├── types/
+│   │   └── task.ts
+│   │       # Task type definition (status, position, etc.)
+│   │
+│   └── middleware.ts
+│       # Optional auth protection
 │
 ├── prisma/
-│ ├── schema.prisma
-│ └── migrations/
+│
+│   ├── schema.prisma
+│   │
+│   │   Models:
+│   │   - User
+│   │   - Task
+│   │       - title
+│   │       - description
+│   │       - status
+│   │       - position
+│   │       - deletedAt (soft delete)
+│   │   - Action
+│   │       - type (DELETE)
+│   │       - taskId
+│   │       - userId
+│   │       - expiresAt
+│   │       - canceled
+│   │
+│   └── migrations/
 │
 ├── .env
+│   # DATABASE_URL
+│   # NEXTAUTH_SECRET
+│   # ABLY_API_KEY
+│   # NEXT_PUBLIC_ABLY_KEY
+│
 ├── next.config.js
 ├── package.json
 └── tsconfig.json
