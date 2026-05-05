@@ -1,179 +1,224 @@
-Project Structure
+# TaskFlow - Real-Time Kanban System
+
+TaskFlow is a full-stack, real-time Kanban board inspired by Linear.  
+It is built with a server-authoritative architecture, event-driven undo system, and realtime synchronization using Ably.
+
+---
+
+# Tech Stack
+
+Frontend
+- Next.js (App Router)
+- React
+- TypeScript
+- Tailwind CSS
+- dnd-kit (drag and drop)
+
+Backend
+- Next.js API Routes (Route Handlers)
+- Prisma ORM
+- PostgreSQL
+- NextAuth (authentication)
+
+Realtime
+- Ably Realtime
+
+State Architecture
+- Server-authoritative state model
+- Event-driven undo system
+- Soft delete system
+- Optimistic UI updates
+
+---
+
+# Project Structure
 
 The project follows a modular Next.js full-stack architecture with clear separation between frontend UI, API routes, database layer, and realtime/event system.
-...
 web/
 ├── src/
-│   ├── app/
-│   │   ├── dashboard/                      # Kanban board UI (main page)
-│   │   │   └── page.tsx
-│   │   │
-│   │   ├── api/
-│   │   │   ├── tasks/                      # Task CRUD API
-│   │   │   │   ├── route.ts               # GET / POST tasks
-│   │   │   │   └── [id]/
-│   │   │   │       └── route.ts           # PATCH / DELETE task
-│   │   │   │
-│   │   │   ├── tasks/
-│   │   │   │   └── reorder/
-│   │   │   │       └── route.ts           # Drag-and-drop ordering (server-authoritative)
-│   │   │   │
-│   │   │   ├── actions/
-│   │   │   │   └── undo/
-│   │   │   │       └── route.ts           # Undo last action
-│   │   │   │
-│   │   │   └── health/                    # Optional health check endpoint
-│   │   │
-│   │   ├── layout.tsx
-│   │   └── globals.css
-│   │
-│   ├── components/
-│   │   ├── TaskCard.tsx                   # Draggable task card
-│   │   ├── TaskSidebar.tsx                # Create / edit / delete task panel
-│   │   └── ui/                            # Shared UI components
-│   │
-│   ├── lib/
-│   │   ├── db/
-│   │   │   └── prisma.ts                  # Prisma client instance
-│   │   │
-│   │   ├── auth.ts                        # NextAuth config
-│   │   ├── realtime.ts                    # Ably event publisher
-│   │   └── utils.ts
-│   │
-│   ├── types/
-│   │   └── task.ts                        # Task type definitions
-│   │
-│   └── middleware.ts                      # Route protection (if enabled)
+│ ├── app/
+│ │ ├── dashboard/
+│ │ │ └── page.tsx
+│ │ │
+│ │ ├── api/
+│ │ │ ├── tasks/
+│ │ │ │ ├── route.ts
+│ │ │ │ └── [id]/
+│ │ │ │ └── route.ts
+│ │ │ │
+│ │ │ ├── tasks/
+│ │ │ │ └── reorder/
+│ │ │ │ └── route.ts
+│ │ │ │
+│ │ │ ├── actions/
+│ │ │ │ └── undo/
+│ │ │ │ └── route.ts
+│ │ │ │
+│ │ │ └── health/
+│ │ │ └── route.ts
+│ │ │
+│ │ ├── layout.tsx
+│ │ └── globals.css
+│ │
+│ ├── components/
+│ │ ├── TaskCard.tsx
+│ │ ├── TaskSidebar.tsx
+│ │ └── ui/
+│ │
+│ ├── lib/
+│ │ ├── db/
+│ │ │ └── prisma.ts
+│ │ ├── auth.ts
+│ │ ├── realtime.ts
+│ │ └── utils.ts
+│ │
+│ ├── types/
+│ │ └── task.ts
+│ │
+│ └── middleware.ts
 │
 ├── prisma/
-│   ├── schema.prisma                      # Database schema (User, Task, Action)
-│   └── migrations/
+│ ├── schema.prisma
+│ └── migrations/
 │
 ├── .env
 ├── next.config.js
 ├── package.json
 └── tsconfig.json
-...
 
-Architecture Overview
+---
 
-The system is designed with a server-authoritative, event-driven architecture similar to Linear.
+# Architecture Overview
 
-Frontend Layer
+The system is designed using a **server-authoritative, event-driven architecture** similar to Linear.
 
-Located in apps/web/app and components/
+---
+
+## Frontend Layer
+
+Located in `web/src/app` and `web/src/components`
 
 Responsibilities:
-
-Kanban board rendering
-Drag-and-drop interactions (dnd-kit)
-Task creation, editing, deletion
-Optimistic UI updates
-Undo UI handling
-Realtime updates via Ably
+- Kanban board rendering
+- Drag-and-drop interactions (dnd-kit)
+- Task creation, editing, deletion
+- Optimistic UI updates
+- Undo UI handling
+- Realtime updates via Ably
 
 The frontend never owns final state.
 
-API Layer (Next.js Route Handlers)
+---
 
-Located in:
+## API Layer (Next.js Route Handlers)
 
-apps/web/app/api/
+Located in `web/src/app/api`
 
-Core responsibilities:
+Responsibilities:
+- Task CRUD operations
+- Drag-and-drop reorder logic
+- Soft delete system
+- Action logging for undo system
+- Undo execution endpoint
 
-Task CRUD operations
-Drag-and-drop reorder logic
-Soft delete system
-Action logging (undo system)
-Undo execution endpoint
+All requests are validated against authenticated user session.
 
-Each request is validated against the authenticated user before execution.
+---
 
-Database Layer (Prisma + PostgreSQL)
+## Database Layer (Prisma + PostgreSQL)
 
-Located in:
+Located in `prisma/schema.prisma`
 
-prisma/schema.prisma
-Core Models
+### Core Models
+
 User
-Authentication identity
-Owns tasks and actions
+- Authentication identity
+- Owns tasks and actions
+
 Task
-Core Kanban entity
-Supports:
-title
-description
-status (TODO, IN_PROGRESS, DONE)
-position (ordering)
-deletedAt (soft delete)
+- Core Kanban entity
+- title
+- description
+- status (TODO, IN_PROGRESS, DONE)
+- position (ordering)
+- deletedAt (soft delete support)
+
 Action
-Event log system for undo functionality
-Stores reversible operations
-Supports DELETE rollback via snapshot storage
-Extensible for CREATE / UPDATE / REORDER actions
-Realtime Layer (Ably)
+- Event log system for undo functionality
+- Stores reversible operations
+- Supports DELETE rollback via snapshot storage
+- Extensible for CREATE, UPDATE, REORDER actions
 
-Located in:
+---
 
-lib/realtime.ts
+## Realtime Layer (Ably)
+
+Located in `web/src/lib/realtime.ts`
 
 Used for:
-
-Broadcasting task updates
-Synchronizing multiple clients
-Keeping Kanban board in real-time sync
+- Broadcasting task updates
+- Synchronizing multiple clients
+- Real-time Kanban board sync
 
 Events:
+- bulk_update → full board refresh
+- updated → single task update
 
-bulk_update → full board refresh
-updated → single task update
-Undo System (Action-Based Architecture)
+---
 
-The undo system works as an event log:
+## Undo System (Event-Based Architecture)
 
-Flow:
+The undo system is implemented as an **event log**, not direct reversal.
 
-User deletes a task
-Task is soft-deleted in database
-Action record is created with full snapshot
-Undo endpoint reads last action
-Task is restored from snapshot
-Action is removed after execution
+### Flow:
+1. User deletes a task
+2. Task is soft-deleted
+3. Action record is created with snapshot
+4. Undo endpoint reads latest action
+5. Task is restored from snapshot
+6. Action is removed
 
-This enables:
+### Benefits:
+- Safe rollback of operations
+- Foundation for multi-step undo stack
+- Future event sourcing capability
 
-Safe recovery of deleted tasks
-Foundation for multi-step undo stack
-Future event-sourced architecture
-Drag & Drop System
+---
+
+## Drag & Drop System
 
 Uses dnd-kit with server-authoritative ordering.
 
-Flow:
+### Flow:
+1. User drags task
+2. Client computes tentative state
+3. Server receives updated list
+4. Server validates ownership
+5. Server persists ordering
+6. Server broadcasts via Ably
 
-User drags task in UI
-Client computes tentative ordering
-Server receives full updated list
-Server validates ownership
-Server persists final ordering
-Server broadcasts updated state via Ably
+Server is always source of truth.
 
-The server is always the source of truth.
+---
 
-Key Design Principles
-Server is the single source of truth
-Client state is always optimistic
-All mutations are validated on backend
-Undo system is event-based (not direct mutation reversal)
-Realtime sync ensures multi-user consistency
-Soft deletes are preferred over hard deletes
-Future Improvements
-Multi-step undo/redo system (Linear-style)
-Full event sourcing architecture
-Conflict resolution for concurrent edits
-Task version history timeline
-Collaborative cursors / presence system
-Role-based access control
-Background cleanup for expired actions
-Performance optimization for large boards
+## Key Design Principles
+
+- Server is the single source of truth
+- Client state is optimistic only
+- All mutations validated on backend
+- Undo system is event-based
+- Soft deletes instead of hard deletes
+- Realtime sync ensures multi-user consistency
+
+---
+
+## Future Improvements
+
+- Multi-step undo/redo (Linear-style)
+- Full event sourcing architecture
+- Conflict resolution for concurrent edits
+- Task history timeline
+- Collaborative cursors / presence system
+- Role-based access control
+- Background cleanup for expired actions
+- Performance optimization for large boards
