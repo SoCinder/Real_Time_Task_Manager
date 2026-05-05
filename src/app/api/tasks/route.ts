@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { publish } from "@/lib/realtime";
 
 import type { Task } from "@/types/task";
 
@@ -44,7 +45,7 @@ export async function GET() {
   }
 }
 
-// ---------------- POST ----------------
+// ---------------- POST (FIXED) ----------------
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
+    // 🧠 get position
     const count = await prisma.task.count({
       where: {
         userId: user.id,
@@ -71,6 +73,7 @@ export async function POST(req: Request) {
       },
     });
 
+    // 🧠 create task
     const task = await prisma.task.create({
       data: {
         title: body.title,
@@ -81,6 +84,21 @@ export async function POST(req: Request) {
         deletedAt: null,
       },
     });
+
+    // 🔥 CRITICAL: fetch fresh state
+    const tasks = await prisma.task.findMany({
+      where: {
+        userId: user.id,
+        deletedAt: null,
+      },
+      orderBy: [
+        { status: "asc" },
+        { position: "asc" },
+      ],
+    });
+
+    // 🔥 CRITICAL: broadcast
+    publish("bulk_update", tasks);
 
     return NextResponse.json(task);
   } catch (err) {

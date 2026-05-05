@@ -9,6 +9,8 @@ import {
   DragEndEvent,
   closestCorners,
   useDroppable,
+  DragOverlay,
+  DragStartEvent,
 } from "@dnd-kit/core";
 
 import {
@@ -30,22 +32,21 @@ export default function DashboardPage() {
   const [createMode, setCreateMode] = useState(false);
   const [showUndo, setShowUndo] = useState(false);
 
+  const [activeTask, setActiveTask] = useState<Task | null>(null); // 👈 ghost
+  const [hydrated, setHydrated] = useState(false);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
     })
   );
 
-  // ---------------- FETCH ----------------
+  // ---------------- FETCH (fallback only) ----------------
   const fetchTasks = async () => {
     const res = await fetch("/api/tasks");
     const data = await res.json();
     setTasks(data);
   };
-
-  useEffect(() => {
-    fetchTasks();
-  }, []);
 
   // ---------------- ABLY ----------------
   useEffect(() => {
@@ -56,7 +57,17 @@ export default function DashboardPage() {
     const channel = client.channels.get("tasks");
 
     channel.subscribe("bulk_update", (msg) => {
-      setTasks(msg.data);
+      setTasks((prev) => {
+        const next = msg.data;
+
+        if (JSON.stringify(prev) === JSON.stringify(next)) {
+          return prev;
+        }
+
+        return next;
+      });
+
+      setHydrated(true);
     });
 
     return () => {
@@ -64,6 +75,15 @@ export default function DashboardPage() {
       client.close();
     };
   }, []);
+
+  // ---------------- INITIAL FETCH ----------------
+  useEffect(() => {
+    if (hydrated) return;
+
+    fetchTasks().then(() => {
+      setHydrated(true);
+    });
+  }, [hydrated]);
 
   // ---------------- GROUP ----------------
   const grouped = useMemo(() => {
@@ -85,8 +105,17 @@ export default function DashboardPage() {
     return g;
   }, [tasks]);
 
-  // ---------------- DRAG (LINEAR STYLE FIXED) ----------------
+  // ---------------- DRAG START ----------------
+  const onDragStart = (event: DragStartEvent) => {
+    const id = event.active.id as string;
+    const task = tasks.find((t) => t.id === id);
+    if (task) setActiveTask(task);
+  };
+
+  // ---------------- DRAG END ----------------
   const onDragEnd = async (event: DragEndEvent) => {
+    setActiveTask(null);
+
     const { active, over } = event;
     if (!over) return;
 
@@ -94,9 +123,6 @@ export default function DashboardPage() {
     const overId = over.id as string;
 
     if (activeId === overId) return;
-
-    // ❗ NO local ordering logic anymore
-    // We only send intent to server
 
     try {
       await fetch("/api/tasks/move", {
@@ -111,7 +137,7 @@ export default function DashboardPage() {
       });
     } catch (err) {
       console.error("Move failed:", err);
-      fetchTasks(); // fallback safety
+      fetchTasks();
     }
   };
 
@@ -128,7 +154,6 @@ export default function DashboardPage() {
     });
 
     setShowUndo(false);
-    fetchTasks();
   };
 
   // ---------------- COLUMN ----------------
@@ -184,8 +209,8 @@ export default function DashboardPage() {
             setSelectedTask(null);
             setCreateMode(false);
           }}
-          onCreated={fetchTasks}
-          onUpdated={fetchTasks}
+          onCreated={() => {}}
+          onUpdated={() => {}}
           onDeleted={async (task: Task) => {
             await fetch(`/api/tasks/${task.id}`, {
               method: "DELETE",
@@ -210,6 +235,7 @@ export default function DashboardPage() {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
+        onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       >
         <div className="grid grid-cols-3 gap-4">
@@ -217,6 +243,15 @@ export default function DashboardPage() {
             <Column key={col} col={col} />
           ))}
         </div>
+
+        {/* 👇 GHOST PREVIEW */}
+        <DragOverlay dropAnimation={{ duration: 200, easing: "ease" }}>
+          {activeTask ? (
+            <div className="rotate-2 scale-105 opacity-90 shadow-2xl">
+              <TaskCard task={activeTask} onClick={() => {}} />
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </div>
   );

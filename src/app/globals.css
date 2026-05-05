@@ -22,7 +22,6 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* 🌙 Dark mode (balanced, not pitch black) */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0f172a;

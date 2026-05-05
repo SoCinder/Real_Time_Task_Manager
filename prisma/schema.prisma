@@ -53,4 +53,6 @@ model Action {
 
 enum ActionType {
   DELETE
+  CREATE
+  UPDATE
 }

@@ -35,7 +35,7 @@ export async function POST(req: Request) {
       return new NextResponse("Invalid payload", { status: 400 });
     }
 
-    // ---------------- SECURITY FILTER ----------------
+    
     const userTasks: { id: string }[] = await prisma.task.findMany({
       where: {
         userId: user.id,

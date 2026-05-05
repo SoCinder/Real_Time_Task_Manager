@@ -21,7 +21,7 @@ export function TaskCard({ task, onClick }: any) {
       ? "none"
       : transition || "transform 200ms ease",
     zIndex: isDragging ? 50 : "auto",
-    opacity: isDragging ? 0.6 : 1,
+    opacity: isDragging ? 0.3 : 1,
   };
 
   return (

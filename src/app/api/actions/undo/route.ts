@@ -45,7 +45,7 @@ export async function POST() {
       );
     }
 
-    // 🧠 reverse action
+    
     switch (lastAction.type) {
       case "DELETE":
         await prisma.task.update({
@@ -75,7 +75,7 @@ export async function POST() {
       data: { canceled: true },
     });
 
-    // 🔥 IMPORTANT: broadcast FULL updated state
+    
     const tasks = await prisma.task.findMany({
       where: {
         userId: user.id,

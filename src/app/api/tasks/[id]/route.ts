@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { publish } from "@/lib/realtime";
+import { ActionType } from "@prisma/client";
 
 // ---------------- PATCH ----------------
 export async function PATCH(req: Request, context: any) {
@@ -22,7 +23,6 @@ export async function PATCH(req: Request, context: any) {
     }
 
     const { id } = await context.params;
-
     const body = await req.json();
 
     const existing = await prisma.task.findFirst({
@@ -33,6 +33,18 @@ export async function PATCH(req: Request, context: any) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    // 🧠 snapshot BEFORE update
+    await prisma.action.create({
+      data: {
+        type: ActionType.UPDATE, 
+        taskId: existing.id,
+        userId: user.id,
+        before: existing as unknown as object,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 5),
+        canceled: false,
+      },
+    });
+
     const task = await prisma.task.update({
       where: { id },
       data: {
@@ -40,7 +52,7 @@ export async function PATCH(req: Request, context: any) {
         ...(body.status !== undefined && { status: body.status }),
         ...(body.description !== undefined && {
           description: body.description,
-        }), // ✅ FIXED
+        }),
       },
     });
 
@@ -48,12 +60,12 @@ export async function PATCH(req: Request, context: any) {
 
     return NextResponse.json(task);
   } catch (err) {
-    console.error(err);
+    console.error("PATCH ERROR:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
 
-// ---------------- DELETE (SOFT + UNDO SNAPSHOT) ----------------
+// ---------------- DELETE ----------------
 export async function DELETE(req: Request, context: any) {
   try {
     const session = await getServerSession(authOptions);
@@ -84,25 +96,19 @@ export async function DELETE(req: Request, context: any) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // =========================
-    // 1. CREATE ACTION SNAPSHOT (FULL STATE)
-    // =========================
+    // 🧠 snapshot BEFORE delete
     await prisma.action.create({
       data: {
-        type: "DELETE",
+        type: ActionType.DELETE, 
         taskId: existing.id,
         userId: user.id,
-
-        before: existing as any, // ✅ includes description automatically
-
+        before: existing as unknown as object,
         expiresAt: new Date(Date.now() + 1000 * 60 * 5),
         canceled: false,
       },
     });
 
-    // =========================
-    // 2. SOFT DELETE TASK
-    // =========================
+    // 🧠 soft delete
     await prisma.task.update({
       where: { id },
       data: {
@@ -110,9 +116,7 @@ export async function DELETE(req: Request, context: any) {
       },
     });
 
-    // =========================
-    // 3. BROADCAST UPDATE
-    // =========================
+    // 🔥 broadcast updated board
     const tasks = await prisma.task.findMany({
       where: {
         userId: user.id,
@@ -125,7 +129,7 @@ export async function DELETE(req: Request, context: any) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error("DELETE ERROR:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

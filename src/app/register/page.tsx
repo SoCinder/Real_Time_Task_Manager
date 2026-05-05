@@ -19,7 +19,7 @@ export default function RegisterPage() {
     });
 
     if (res.ok) {
-      // ✅ redirect back to login after success
+      
       router.push("/login");
     } else {
       alert("User already exists or error occurred");
